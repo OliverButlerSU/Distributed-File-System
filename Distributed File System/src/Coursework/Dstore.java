@@ -175,11 +175,11 @@ public class Dstore {
 	 * @return message
 	 */
 	private String listFiles(){
-		StringBuilder message = new StringBuilder(Protocol.LIST_TOKEN + " ");
+		StringBuilder message = new StringBuilder(Protocol.LIST_TOKEN);
 		for(String filename : files.keySet()){
-			message.append(filename + " ");
+			message.append(" " + filename);
 		}
-		return message.toString().strip();
+		return message.toString();
 	}
 
 	/**
