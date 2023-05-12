@@ -30,24 +30,24 @@ public class Dstore {
 	public static void main(String[] args) {
 
 		try{
-//			final int port = Integer.parseInt(args[0]);
-//			final int cport; = Integer.parseInt(args[1]);
-//			final int timeout = Integer.parseInt(args[2]);
-//			final String fileFolder = args[3];
+			final int port = Integer.parseInt(args[0]);
+			final int cport = Integer.parseInt(args[1]);
+			final int timeout = Integer.parseInt(args[2]);
+			final String fileFolder = args[3];
 
-			final int port = 4000;
-			final int cport = 12345;
-			final int timeout = 1000;
-			final String fileFolder = "DStoreFiles";
+//			final int port = 4000;
+//			final int cport = 12345;
+//			final int timeout = 1000;
+//			final String fileFolder = "DStoreFiles";
 
 			// launch the controller
-//			new Dstore(port, cport, timeout, fileFolder+port);
+			new Dstore(port, cport, timeout, fileFolder);
 //			new Dstore(port+1, cport, timeout, fileFolder+(port+1));
 
-			for (int i = 0; i < 2; i++) {
-				int finalI = i;
-				new Thread(() -> new Dstore(port+finalI, cport, timeout, fileFolder+(port+finalI))).start();
-			}
+//			for (int i = 0; i < 4; i++) {
+//				int finalI = i;
+//				new Thread(() -> new Dstore(port+finalI, cport, timeout, fileFolder+(port+finalI))).start();
+//			}
 		} catch (Exception e){
 			System.err.println("Error parsing import");
 		}

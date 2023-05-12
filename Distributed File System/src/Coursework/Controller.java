@@ -26,18 +26,20 @@ public class Controller {
 	private ArrayList<ClientMessageWriter> clients = new ArrayList<>();
 	private Index index = new Index();
 
+	private Object clientLock = new Object();
+
 	public static void main(String[] args){
 
 		try{
-//			final int cport = Integer.parseInt(args[0]);
-//			final int R = Integer.parseInt(args[1]);
-//			final int timeout = Integer.parseInt(args[2]);
-//			final int rebalancePeriod = Integer.parseInt(args[3]);
+			final int cport = Integer.parseInt(args[0]);
+			final int R = Integer.parseInt(args[1]);
+			final int timeout = Integer.parseInt(args[2]);
+			final int rebalancePeriod = Integer.parseInt(args[3]);
 
-			final int cport = 12345;
-			final int R = 2;
-			final int timeout = 1000;
-			final int rebalancePeriod = 10000;
+//			final int cport = 12345;
+//			final int R = 2;
+//			final int timeout = 1000;
+//			final int rebalancePeriod = 10000;
 
 			// launch the controller
 			new Controller(cport, R, timeout, rebalancePeriod);
@@ -136,6 +138,7 @@ public class Controller {
 					storeFile(message);
 					break;
 				case Protocol.LOAD_TOKEN:
+					resetCounter(message);
 					loadFile(message);
 					break;
 				case Protocol.RELOAD_TOKEN:
@@ -155,14 +158,17 @@ public class Controller {
 
 		private void reloadFile(String message){
 			String filename = message.split(" ")[1];
-			if(!index.containsFilename(filename)){
-				sendClientMessage(Protocol.ERROR_FILE_DOES_NOT_EXIST_TOKEN);
-				return;
-			}
-
 			index.incrementCurrentStoreFiles(filename);
 			loadFile(message);
+		}
 
+		private void resetCounter(String message){
+			try{
+				String filename = message.split(" ")[1];
+				index.resetCurrentStoreFile(filename);
+			} catch (Exception e){
+				//TODO: ERROR
+			}
 		}
 
 		private void loadFile(String message){
@@ -173,11 +179,15 @@ public class Controller {
 					return;
 				}
 
+				if(checkForLoadLock(filename)){
+					return;
+				}
+
 				ArrayList<Integer> ports = index.getPortsWithFile(filename);
 				int size = index.getFileSize(filename);
 				int currentPort = index.getCurrentStoreFile(filename);
 
-				if(ports.size() <= currentPort){
+				if(currentPort >= ports.size()){
 					sendClientMessage(Protocol.ERROR_LOAD_TOKEN);
 					index.resetCurrentStoreFile(filename);
 					return;
@@ -190,16 +200,37 @@ public class Controller {
 			}
 		}
 
+		private boolean checkForLoadLock(String filename){
+			synchronized (clientLock){
+
+				if(index.currentStateStoring(filename)){
+					sendClientMessage(Protocol.ERROR_FILE_DOES_NOT_EXIST_TOKEN);
+					return true;
+				}
+
+				if(index.currentStateRemoving(filename)){
+					sendClientMessage(Protocol.ERROR_FILE_DOES_NOT_EXIST_TOKEN);
+					return true;
+				}
+				return false;
+			}
+		}
+
 		private void storeFile(String message){
-			String filename = message.split(" ")[1];
 			try{
+				String filename = message.split(" ")[1];
 				int filesize = Integer.parseInt(message.split(" ")[2]);
 
 				if(index.containsFilename(filename)){
 					sendClientMessage(Protocol.ERROR_FILE_ALREADY_EXISTS_TOKEN);
 					return;
 				}
-				index.addFileSizes(filename, filesize);
+
+				if(checkForStoreLock(message)){
+					return;
+				};
+
+
 				index.setCurrentState(indexStoreInProgress + filename);
 
 				List<Integer> ports = index.getRDStores(replicationFactor);
@@ -243,27 +274,47 @@ public class Controller {
 				}
 				if(currentAcks.get() == neededAcks){
 					sendClientMessage(Protocol.STORE_COMPLETE_TOKEN);
+					index.addFileSizes(filename, filesize);
 				} else{
 					index.removeFiles(filename);
 				}
 
-
+				index.removeCurrentState(indexStoreInProgress + filename);
 			} catch (Exception e){
 				System.err.println("Error in getting ports to send to");
 				e.printStackTrace();
 			}
-			//TODO:CHANGE THIS
-			index.setCurrentState(indexStoreComplete);
+		}
+
+		private boolean checkForStoreLock(String filename){
+			synchronized (clientLock){
+				if(index.currentStateStoring(filename)){
+					sendClientMessage(Protocol.ERROR_FILE_ALREADY_EXISTS_TOKEN);
+					return true;
+				}
+
+				if(index.currentStateRemoving(filename)){
+					sendClientMessage(Protocol.ERROR_FILE_ALREADY_EXISTS_TOKEN);
+					return true;
+				}
+				return false;
+			}
 		}
 
 		private void deleteFile(String message){
 			try{
 				String filename = message.split(" ")[1];
-
 				if(!index.containsFilename(filename)) {
 					sendClientMessage(Protocol.ERROR_FILE_DOES_NOT_EXIST_TOKEN);
 					return;
 				}
+
+				if(checkForRemoveLock(filename)){
+					return;
+				}
+
+				index.removeFiles(filename);
+
 				index.setCurrentState(indexRemoveInProgress + filename);
 				ArrayList<Integer> ports = index.getPortsWithFile(filename);
 
@@ -298,12 +349,26 @@ public class Controller {
 				}
 				if(currentAcks.get() == neededAcks){
 					sendClientMessage(Protocol.REMOVE_COMPLETE_TOKEN);
-					index.setCurrentState(indexRemoveComplete);
+					index.setCurrentState(indexRemoveInProgress + filename);
 				}
-				index.removeFiles(filename);
 			} catch (Exception e){
 				System.err.println("Error in getting ports to send to");
 				e.printStackTrace();
+			}
+		}
+
+		private boolean checkForRemoveLock(String filename){
+			synchronized (clientLock){
+				if(index.currentStateStoring(filename)){
+					sendClientMessage(Protocol.ERROR_FILE_DOES_NOT_EXIST_TOKEN);
+					return true;
+				}
+
+				if(index.currentStateRemoving(filename)){
+					sendClientMessage(Protocol.ERROR_FILE_DOES_NOT_EXIST_TOKEN);
+					return true;
+				}
+				return false;
 			}
 		}
 	}

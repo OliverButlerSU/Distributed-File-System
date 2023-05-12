@@ -1,6 +1,8 @@
 package Coursework;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Set;
@@ -14,11 +16,16 @@ public class Index {
 	//Contains all the DStores and what files they have
 	private final HashMap<Integer, ArrayList<String>> dstoreFiles = new HashMap<>();
 
-	//Files -> FileSizes
+	//FileName -> FileSizes
 	private final HashMap<String, Integer> dstoreFileSizes = new HashMap<>();
 
-	//FileName -> Amount of dstores currently accessed to get to it
+	//FileName -> Length of Dstore
 	private HashMap<String, Integer> fileDStoresAccessed = new HashMap<>();
+
+	private final String indexStoreInProgress = "STORE_IN_PROGRESS ";
+	private final String indexStoreComplete = "STORE_COMPLETE ";
+	private final String indexRemoveInProgress = "REMOVE_IN_PROGRESS ";
+	private final String indexRemoveComplete = "REMOVE COMPLETE ";
 
 	public Index(){
 
@@ -44,6 +51,10 @@ public class Index {
 		fileDStoresAccessed.remove(filename);
 	}
 
+	public void removeDStore(int dstorePort){
+		dstoreFileSizes.remove(dstorePort);
+	}
+
 	public String getAllFiles(){
 		Set<String> ports = dstoreFileSizes.keySet();
 		return String.join(" ", ports);
@@ -66,32 +77,38 @@ public class Index {
 			return new ArrayList<>();
 		}
 
-		return dstoreFiles.keySet().stream().limit(R).collect(Collectors.toList());
+		return sortRDStoresByLength().stream().limit(R).collect(Collectors.toList());
+		// return dstoreFiles.keySet().stream().limit(R).collect(Collectors.toList());
 	}
 
-	public String currentFileState(String filename){
-		String state = null;
+	public ArrayList<Integer> sortRDStoresByLength() {
+		Integer[][] keyLengths = new Integer[dstoreFiles.size()][2];
 
-		for(int i = 0; i < currentState.size(); i++){
-			String st = currentState.get(i);
-
-			if(st.split(" ")[1].equals(filename)){
-				state = st.split(" ")[0];
-				break;
-			}
+		int i = 0;
+		for (int key : dstoreFiles.keySet()) {
+			keyLengths[i] = new Integer[]{key, dstoreFiles.get(key).size()};
+			i++;
 		}
-		return state;
+
+		Arrays.sort(keyLengths, Comparator.comparingInt(a -> a[1]));
+
+		ArrayList<Integer> finalPorts = new ArrayList<>();
+		for (int j = 0; j < keyLengths.length; j++) {
+			finalPorts.add(keyLengths[j][0]);
+		}
+		return finalPorts;
 	}
 
-	public void removeCurrentState(String filename){
-		for(int i = 0; i < currentState.size(); i++){
-			String st = currentState.get(i);
+	public boolean currentStateStoring(String filename){
+		return currentState.contains(indexStoreInProgress + filename);
+	}
 
-			if(st.split(" ")[1].equals(filename)){
-				currentState.remove(i);
-				break;
-			}
-		}
+	public boolean currentStateRemoving(String filename){
+		return currentState.contains(indexRemoveInProgress + filename);
+	}
+
+	public void removeCurrentState(String state){
+		currentState.remove(state);
 	}
 
 	public boolean containsFilename(String filename){
