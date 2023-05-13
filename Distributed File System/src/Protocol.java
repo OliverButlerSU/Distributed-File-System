@@ -1,5 +1,3 @@
-package Coursework;
-
 public class Protocol {
 
 	// messages sent by Clients
