@@ -2,10 +2,12 @@ package Coursework;
 
 import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -286,19 +288,21 @@ public class Dstore {
 				sendClientMessage(Protocol.ACK_TOKEN);
 
 				//Receive the file and write it
-				String line;
 				long startTime = getCurrentTime();
 				while(true){
 					if(checkForTimeout(startTime)){
 						return;
 					}
-					if ((line = messageReader.readLine()) != null){
-						//Write file
-						FileWriter fileWriter = new FileWriter(fileFolder + File.separator +  filename);
-						System.out.println("Writing file to folder");
-						fileWriter.write(line);
-						fileWriter.close();
+					try{
+						byte[] b = new byte[Integer.parseInt(filesize)];
+						InputStream is = socket.getInputStream();
+						FileOutputStream fr = new FileOutputStream(fileFolder + File.separator + filename);
+						is.read(b, 0, b.length);
+						fr.write(b, 0, b.length);
+						fr.close();
 						break;
+					} catch (Exception e) {
+						//TODO: SOMETHING
 					}
 				}
 
@@ -316,14 +320,13 @@ public class Dstore {
 					return;
 				}
 
-				//Read file content
-				FileReader fileReader = new FileReader(fileFolder + File.separator + filename);
-				char[] fileContent = new char[files.get(filename)];
-				fileReader.read(fileContent);
-				fileReader.close();
+				byte[] b = new byte[files.get(filename)];
+				FileInputStream fr = new FileInputStream(fileFolder + File.separator + filename);
+				fr.read(b, 0, b.length);
+				OutputStream os =  socket.getOutputStream();
+				os.write(b, 0, b.length);
+				fr.close();
 
-				//Send client file
-				sendClientMessage(String.copyValueOf(fileContent));
 			} catch (Exception e){
 				System.out.println(e.getMessage());
 			}

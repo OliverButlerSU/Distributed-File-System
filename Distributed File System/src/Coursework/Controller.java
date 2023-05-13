@@ -66,23 +66,29 @@ public class Controller {
 
 					//Accept any new clients and make a new socket for them
 					Socket client = socket.accept();
+					new Thread(() ->{
+						try{
+							//Get the message sent by the client
+							BufferedReader message = new BufferedReader(new InputStreamReader(client.getInputStream()));
+							PrintWriter printWriter = new PrintWriter(client.getOutputStream());
 
-					//Get the message sent by the client
-					BufferedReader message = new BufferedReader(new InputStreamReader(client.getInputStream()));
-					PrintWriter printWriter = new PrintWriter(client.getOutputStream());
+							String line = message.readLine();
+							//If the client sends a "JOIN" message, create a new dStore, else create a client
+							if(line.split(" ")[0].equals(Protocol.JOIN_TOKEN)){
+								System.out.println("Creating a new Dstore");
+								DstoreMessageWriter dstoreController = new DstoreMessageWriter(client, message, line,printWriter);
+								dstores.add(dstoreController);
+							} else{
+								System.out.println("Creating a new client");
+								ClientMessageWriter clientController = new ClientMessageWriter(client, message, line, printWriter);
+								clients.add(clientController);
+								new Thread(clientController).start();
+							}
+						} catch (Exception e){
+							System.err.println("Error in creating thread: " + e);
+						}
 
-					String line = message.readLine();
-					//If the client sends a "JOIN" message, create a new dStore, else create a client
-					if(line.split(" ")[0].equals(Protocol.JOIN_TOKEN)){
-						System.out.println("Creating a new Dstore");
-						DstoreMessageWriter dstoreController = new DstoreMessageWriter(client, message, line,printWriter);
-						dstores.add(dstoreController);
-					} else{
-						System.out.println("Creating a new client");
-						ClientMessageWriter clientController = new ClientMessageWriter(client, message, line, printWriter);
-						clients.add(clientController);
-						new Thread(clientController).start();
-					}
+					}).start();
 				} catch(Exception e) {
 					System.err.println("Error in creating thread: " + e);
 				}
@@ -158,6 +164,11 @@ public class Controller {
 
 		private void reloadFile(String message){
 			String filename = message.split(" ")[1];
+			if(!index.containsFilename(filename)){
+				sendClientMessage(Protocol.ERROR_FILE_DOES_NOT_EXIST_TOKEN);
+				return;
+			}
+
 			index.incrementCurrentStoreFiles(filename);
 			loadFile(message);
 		}
@@ -226,12 +237,9 @@ public class Controller {
 					return;
 				}
 
-				if(checkForStoreLock(message)){
+				if(checkForStoreLock(filename)){
 					return;
-				};
-
-
-				index.setCurrentState(indexStoreInProgress + filename);
+				}
 
 				List<Integer> ports = index.getRDStores(replicationFactor);
 				StringBuilder sb = new StringBuilder("");
@@ -242,49 +250,51 @@ public class Controller {
 
 				sendClientMessage(Protocol.STORE_TO_TOKEN + sb);
 
+				new Thread(() -> {
 
-				int neededAcks = ports.size();
-				AtomicInteger currentAcks = new AtomicInteger();
-				long startTime = System.currentTimeMillis();
+					int neededAcks = ports.size();
+					AtomicInteger currentAcks = new AtomicInteger();
+					long startTime = System.currentTimeMillis();
 
-				//get all dstores with the port and listen for store ack
-				for (DstoreMessageWriter dstore: dstores){
-					if(ports.contains(dstore.getPort())){
-						new Thread(() ->{
-							while(true){
-								if(System.currentTimeMillis() - startTime >= timeout){
-									System.err.println("Could not connect to DStore: " + dstore.getPort() + " in time");
-									break;
-								}
-								String line;
-								try{
-									if((line = dstore.messageReader.readLine()) != null){
-										if(line.equals(Protocol.STORE_ACK_TOKEN + " " + filename)){
-											currentAcks.addAndGet(1);
-											index.addDStoreFile(dstore.getPort(), filename);
-											break;
-										}
+					//get all dstores with the port and listen for store ack
+					for (DstoreMessageWriter dstore: dstores){
+						if(ports.contains(dstore.getPort())){
+							new Thread(() ->{
+								while(true){
+									if(System.currentTimeMillis() - startTime >= timeout){
+										System.err.println("Could not connect to DStore: " + dstore.getPort() + " in time");
+										break;
 									}
-								} catch (Exception e) {
-									e.printStackTrace();
+									String line;
+									try{
+										if((line = dstore.messageReader.readLine()) != null){
+											if(line.equals(Protocol.STORE_ACK_TOKEN + " " + filename)){
+												currentAcks.addAndGet(1);
+												index.addDStoreFile(dstore.getPort(), filename);
+												break;
+											}
+										}
+									} catch (Exception e) {
+										e.printStackTrace();
+									}
 								}
-							}
-						}).run();
+							}).run();
+						}
 					}
-				}
-				if(currentAcks.get() == neededAcks){
-					sendClientMessage(Protocol.STORE_COMPLETE_TOKEN);
-					index.addFileSizes(filename, filesize);
-				} else{
-					index.removeFiles(filename);
-				}
+					if(currentAcks.get() == neededAcks){
+						sendClientMessage(Protocol.STORE_COMPLETE_TOKEN);
+						index.addFileSizes(filename, filesize);
+					} else{
+						index.removeFiles(filename);
+					}
 
-				index.removeCurrentState(indexStoreInProgress + filename);
+					index.removeCurrentState(indexStoreInProgress + filename);}).start();
 			} catch (Exception e){
 				System.err.println("Error in getting ports to send to");
 				e.printStackTrace();
 			}
 		}
+
 
 		private boolean checkForStoreLock(String filename){
 			synchronized (clientLock){
@@ -297,6 +307,7 @@ public class Controller {
 					sendClientMessage(Protocol.ERROR_FILE_ALREADY_EXISTS_TOKEN);
 					return true;
 				}
+				index.setCurrentState(indexStoreInProgress + filename);
 				return false;
 			}
 		}
@@ -314,8 +325,6 @@ public class Controller {
 				}
 
 				index.removeFiles(filename);
-
-				index.setCurrentState(indexRemoveInProgress + filename);
 				ArrayList<Integer> ports = index.getPortsWithFile(filename);
 
 				int neededAcks = ports.size();
@@ -349,7 +358,7 @@ public class Controller {
 				}
 				if(currentAcks.get() == neededAcks){
 					sendClientMessage(Protocol.REMOVE_COMPLETE_TOKEN);
-					index.setCurrentState(indexRemoveInProgress + filename);
+					index.removeCurrentState(indexRemoveInProgress + filename);
 				}
 			} catch (Exception e){
 				System.err.println("Error in getting ports to send to");
@@ -368,6 +377,7 @@ public class Controller {
 					sendClientMessage(Protocol.ERROR_FILE_DOES_NOT_EXIST_TOKEN);
 					return true;
 				}
+				index.setCurrentState(indexRemoveInProgress + filename);
 				return false;
 			}
 		}
