@@ -61,9 +61,25 @@ public class Dstore {
 		this.timeout = timeout;
 		this.fileFolder = fileFolder;
 
-		addFolderFilesToHashMap();
+		removeAllFiles();
+		//addFolderFilesToHashMap();
 		createControllerSocket();
 		createClientReceiverSocket();
+	}
+
+	private void removeAllFiles(){
+		//Create folder
+		File folder = new File(fileFolder);
+		if(!folder.exists()){
+			System.out.println("Creating folder");
+			folder.mkdir();
+		}
+
+		//Add each file to hashmap
+		File[] files = folder.listFiles();
+		for(File file: files){
+			file.delete();
+		}
 	}
 
 	/**
@@ -154,7 +170,7 @@ public class Dstore {
 	 * @param message message from controller
 	 */
 	private void handleControllerMessage(String message){
-		System.out.println("Received message \"" + message + "\" from controller");
+		System.out.println("Received message \"" + message + "\" from Controller");
 
 		String[] splitMessage = message.split(" ");
 		switch(splitMessage[0]){
